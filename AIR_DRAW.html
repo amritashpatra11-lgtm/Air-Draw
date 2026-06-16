@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Air Draw ✋ by Amritash</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #050508;
+    --surface: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.1);
+    --text: #f0f0ff;
+    --dim: rgba(240,240,255,0.4);
+    --accent: #00ffcc;
+    --danger: #ff4466;
+    --warn: #ffaa00;
+    --color-switch: #cc44ff;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: 'Space Mono', monospace;
+    touch-action: none;
+  }
+
+  /* ── CAMERA + CANVAS STACK ── */
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  #video {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  #video.on { opacity: 1; }
+
+  #stage::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: rgba(5,5,10,0.28);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  #draw-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  #landmark-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  /* ── SPLASH ── */
+  #splash {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: linear-gradient(160deg, #050508 0%, #0a0a18 100%);
+    padding: 28px; gap: 18px;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  #splash.gone { opacity: 0; pointer-events: none; transform: scale(1.03); }
+
+  .splash-title {
+    font-size: clamp(28px, 8vw, 48px);
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -1px;
+    text-align: center;
+    line-height: 1.1;
+  }
+  .splash-title em {
+    font-style: normal;
+    color: var(--accent);
+    text-shadow: 0 0 30px rgba(0,255,204,0.5);
+  }
+
+  .splash-desc {
+    font-size: 12px;
+    color: var(--dim);
+    text-align: center;
+    line-height: 1.8;
+    max-width: 300px;
+  }
+
+  /* ── CREDIT BADGE ── */
+  .credit-badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 18px;
+    background: linear-gradient(135deg, rgba(204,68,255,0.15), rgba(0,255,204,0.1));
+    border: 1px solid rgba(204,68,255,0.35);
+    border-radius: 100px;
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 0.06em;
+  }
+  .credit-badge span {
+    color: var(--color-switch);
+    font-weight: 700;
+    font-size: 12px;
+    text-shadow: 0 0 12px rgba(204,68,255,0.6);
+  }
+
+  .how-to {
+    display: flex; flex-direction: column; gap: 8px;
+    width: 100%; max-width: 320px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px 18px;
+  }
+  .how-to-title {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: rgba(240,240,255,0.25);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .how-row {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 11px; color: var(--dim);
+  }
+  .how-icon {
+    font-size: 18px; width: 30px; text-align: center; flex-shrink: 0;
+  }
+  .how-row strong {
+    color: var(--text); display: block; margin-bottom: 1px; font-size: 12px;
+  }
+  .how-row .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 6px;
+    font-size: 10px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+  .tag-draw  { background: rgba(0,255,204,0.15);  color: var(--accent);       border: 1px solid rgba(0,255,204,0.3); }
+  .tag-lift  { background: rgba(255,170,0,0.15);  color: var(--warn);         border: 1px solid rgba(255,170,0,0.3); }
+  .tag-erase { background: rgba(255,68,102,0.15); color: var(--danger);       border: 1px solid rgba(255,68,102,0.3); }
+  .tag-color { background: rgba(204,68,255,0.15); color: var(--color-switch); border: 1px solid rgba(204,68,255,0.3); }
+
+  .start-btn {
+    padding: 14px 40px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 100px;
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    box-shadow: 0 0 40px rgba(0,255,204,0.3);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .start-btn:active { transform: scale(0.95); box-shadow: 0 0 20px rgba(0,255,204,0.2); }
+
+  /* ── TOP HUD ── */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    z-index: 20;
+    padding: 14px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(to bottom, rgba(5,5,10,0.8) 0%, transparent 100%);
+    pointer-events: none;
+  }
+
+  #status-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 12px;
+    background: rgba(5,5,10,0.7);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    font-size: 11px; color: var(--dim);
+    letter-spacing: 0.08em;
+    backdrop-filter: blur(8px);
+    transition: border-color 0.3s, color 0.3s;
+    pointer-events: none;
+  }
+  #status-pill.live { border-color: rgba(0,255,204,0.4); color: var(--accent); }
+  #status-pill.warn { border-color: rgba(255,170,0,0.4); color: var(--warn); }
+  #status-pill.err  { border-color: rgba(255,68,102,0.4); color: var(--danger); }
+
+  .sdot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor;
+    animation: sdotPulse 1.8s ease-in-out infinite;
+  }
+  @keyframes sdotPulse {
+    0%,100% { opacity:1; transform:scale(1); }
+    50% { opacity:0.4; transform:scale(0.6); }
+  }
+  #status-pill.live .sdot { animation: none; opacity: 1; }
+
+  /* ── BOTTOM BAR ── */
+  #bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    z-index: 20;
+    padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(to top, rgba(5,5,10,0.85) 0%, transparent 100%);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  #color-row {
+    display: flex; align-items: center; gap: 6px;
+    overflow-x: auto; scrollbar-width: none;
+    padding: 2px 0;
+  }
+  #color-row::-webkit-scrollbar { display: none; }
+
+  .cswatch {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 2.5px solid transparent;
+    cursor: pointer; flex-shrink: 0;
+    transition: transform 0.15s, border-color 0.15s;
+    position: relative;
+  }
+  .cswatch.active {
+    border-color: rgba(255,255,255,0.9);
+    transform: scale(1.25);
+    box-shadow: 0 0 10px rgba(255,255,255,0.15);
+  }
+  /* Color index indicator */
+  #color-index-label {
+    font-size: 10px;
+    color: var(--color-switch);
+    letter-spacing: 0.08em;
+    flex-shrink: 0;
+    opacity: 0.7;
+    margin-left: 2px;
+  }
+
+  #tool-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .tbtn {
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(5,5,10,0.6);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    backdrop-filter: blur(10px);
+    transition: all 0.15s;
+    flex-shrink: 0;
+    padding: 0 12px;
+    white-space: nowrap;
+    pointer-events: all;
+  }
+  .tbtn:active { transform: scale(0.9); }
+  .tbtn.active { background: rgba(0,255,204,0.18); border-color: rgba(0,255,204,0.5); color: var(--accent); }
+  .tbtn.erase-active { background: rgba(255,68,102,0.18); border-color: rgba(255,68,102,0.5); color: var(--danger); }
+
+  #size-wrap {
+    flex: 1;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(5,5,10,0.6);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0 12px;
+    height: 42px;
+    backdrop-filter: blur(10px);
+  }
+  #size-range {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 3px; border-radius: 2px;
+    background: rgba(255,255,255,0.15); outline: none; cursor: pointer;
+  }
+  #size-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    cursor: pointer;
+  }
+  .sico { font-size: 10px; color: var(--dim); }
+  .sico.lg { font-size: 16px; }
+
+  /* ── GESTURE BADGE ── */
+  #gesture-badge {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    z-index: 25;
+    padding: 6px 16px;
+    background: rgba(5,5,10,0.8);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    font-size: 12px; color: var(--dim);
+    letter-spacing: 0.06em;
+    backdrop-filter: blur(10px);
+    opacity: 0;
+    transition: opacity 0.3s, border-color 0.3s, color 0.3s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  #gesture-badge.drawing {
+    opacity: 1;
+    border-color: rgba(0,255,204,0.5);
+    color: var(--accent);
+  }
+  #gesture-badge.lifted {
+    opacity: 1;
+    border-color: rgba(255,170,0,0.4);
+    color: var(--warn);
+  }
+  #gesture-badge.erasing {
+    opacity: 1;
+    border-color: rgba(255,68,102,0.5);
+    color: var(--danger);
+  }
+  #gesture-badge.color-switch {
+    opacity: 1;
+    border-color: rgba(204,68,255,0.5);
+    color: var(--color-switch);
+  }
+
+  /* ── COLOR SWITCH FLASH ── */
+  #color-flash {
+    position: fixed; inset: 0; z-index: 50;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    border: 4px solid var(--color-switch);
+    border-radius: 0;
+  }
+  #color-flash.flash { opacity: 1; }
+
+  /* ── LOADING ── */
+  #loading {
+    position: fixed; inset: 0; z-index: 90;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    background: rgba(5,5,10,0.92);
+    backdrop-filter: blur(10px);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  #loading.on { opacity: 1; pointer-events: all; }
+  .spinner {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 3px solid rgba(0,255,204,0.15);
+    border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading-msg { font-size: 13px; color: var(--dim); letter-spacing: 0.05em; }
+
+  /* ── CURSOR DOT ── */
+  #cursor-dot {
+    position: fixed; pointer-events: none; z-index: 30;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px 4px rgba(0,255,204,0.5);
+    transform: translate(-50%,-50%);
+    display: none;
+    transition: width 0.1s, height 0.1s, background 0.15s, box-shadow 0.15s;
+  }
+  #cursor-dot.erasing {
+    background: var(--danger);
+    box-shadow: 0 0 12px 4px rgba(255,68,102,0.5);
+  }
+  #cursor-dot.color-switching {
+    background: var(--color-switch);
+    box-shadow: 0 0 16px 6px rgba(204,68,255,0.6);
+  }
+
+  /* ── TOAST ── */
+  #toasts {
+    position: fixed; top: 100px; left: 50%; transform: translateX(-50%);
+    z-index: 80; display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none; align-items: center;
+  }
+  .toast {
+    padding: 7px 16px;
+    background: rgba(20,20,30,0.95);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    font-size: 12px; color: var(--text);
+    backdrop-filter: blur(10px);
+    animation: toastIn 0.25s ease forwards;
+  }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(-8px) scale(0.95); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .toast.out { animation: toastOut 0.3s ease forwards; }
+  @keyframes toastOut {
+    to { opacity: 0; transform: translateY(-6px) scale(0.95); }
+  }
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-title">✋ <em>Air Draw</em></div>
+
+  <!-- Credit Badge -->
+  <div class="credit-badge">
+    ✨ Developed by <span>Amritash</span>
+  </div>
+
+  <p class="splash-desc">Draw in the air using your hand gestures.<br>No touching the screen needed.</p>
+
+  <div class="how-to">
+    <div class="how-to-title">✋ Hand Gesture Controls</div>
+    <div class="how-row">
+      <div class="how-icon">☝️</div>
+      <div>
+        <strong>Index Finger Up <span class="tag tag-draw">DRAW</span></strong>
+        Paint in the air with your fingertip
+      </div>
+    </div>
+    <div class="how-row">
+      <div class="how-icon">✌️</div>
+      <div>
+        <strong>Two Fingers Up <span class="tag tag-lift">LIFT</span></strong>
+        Move without drawing (pen up)
+      </div>
+    </div>
+    <div class="how-row">
+      <div class="how-icon">✊</div>
+      <div>
+        <strong>Closed Fist <span class="tag tag-erase">ERASE</span></strong>
+        Erase wherever you move
+      </div>
+    </div>
+    <div class="how-row">
+      <div class="how-icon">🤙</div>
+      <div>
+        <strong>Pinky + Thumb Up <span class="tag tag-color">NEXT COLOR</span></strong>
+        Switch to the next colour in palette
+      </div>
+    </div>
+  </div>
+
+  <button class="start-btn" id="start-btn">Start Camera</button>
+</div>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loading-msg">Loading hand tracker…</div>
+</div>
+
+<!-- STAGE -->
+<div id="stage">
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="draw-canvas"></canvas>
+  <canvas id="landmark-canvas"></canvas>
+</div>
+
+<!-- CURSOR DOT -->
+<div id="cursor-dot"></div>
+
+<!-- COLOR SWITCH FLASH -->
+<div id="color-flash"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="status-pill" class="warn">
+    <div class="sdot"></div>
+    <span id="status-text">LOADING</span>
+  </div>
+  <div style="display:flex;gap:8px;pointer-events:all;">
+    <button class="tbtn" id="btn-undo" title="Undo">↩</button>
+    <button class="tbtn" id="btn-clear" title="Clear">🗑</button>
+    <button class="tbtn" id="btn-save" title="Save">💾</button>
+  </div>
+</div>
+
+<!-- GESTURE BADGE -->
+<div id="gesture-badge">✏️ DRAWING</div>
+
+<!-- BOTTOM BAR -->
+<div id="bar">
+  <div id="color-row">
+    <span id="color-index-label"></span>
+  </div>
+  <div id="tool-row">
+    <button class="tbtn active" id="btn-pen">✏️</button>
+    <button class="tbtn" id="btn-eraser">⌫</button>
+    <div id="size-wrap">
+      <span class="sico">•</span>
+      <input type="range" id="size-range" min="3" max="50" value="8">
+      <span class="sico lg">●</span>
+    </div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div id="toasts"></div>
+
+<!-- MediaPipe via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const PALETTE = [
+  '#ffffff','#ff4466','#ff8800','#ffee00',
+  '#44ff88','#00ffcc','#4488ff','#cc44ff',
+  '#ff44cc','#000000',
+];
+
+const MAX_HIST = 30;
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const S = {
+  colorIdx:    5,         // index into PALETTE (default #00ffcc)
+  get color()  { return PALETTE[this.colorIdx]; },
+  brushSize:   8,
+  isErasing:   false,
+  isDrawing:   false,
+  lastX:       null,
+  lastY:       null,
+  history:     [],
+  histIdx:     -1,
+  camReady:    false,
+  prevGesture: '',
+  // Cooldown for color switching to prevent rapid-fire switching
+  colorSwitchCooldown: 0,
+  COOLDOWN_FRAMES: 20, // ~0.65s at 30fps
+};
+
+/* ============================================================
+   ELEMENTS
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const el = {
+  splash:      $('splash'),
+  startBtn:    $('start-btn'),
+  loading:     $('loading'),
+  loadMsg:     $('loading-msg'),
+  video:       $('video'),
+  drawC:       $('draw-canvas'),
+  lmC:         $('landmark-canvas'),
+  statusPill:  $('status-pill'),
+  statusTxt:   $('status-text'),
+  gBadge:      $('gesture-badge'),
+  cursorDot:   $('cursor-dot'),
+  colorRow:    $('color-row'),
+  colorIdx:    $('color-index-label'),
+  sizeRange:   $('size-range'),
+  btnPen:      $('btn-pen'),
+  btnEraser:   $('btn-eraser'),
+  btnUndo:     $('btn-undo'),
+  btnClear:    $('btn-clear'),
+  btnSave:     $('btn-save'),
+  toasts:      $('toasts'),
+  colorFlash:  $('color-flash'),
+};
+
+let drawCtx = el.drawC.getContext('2d', { willReadFrequently: true });
+let lmCtx   = el.lmC.getContext('2d');
+
+/* ============================================================
+   CANVAS RESIZE
+   ============================================================ */
+function resizeCanvases() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const tmp = document.createElement('canvas');
+  tmp.width = el.drawC.width; tmp.height = el.drawC.height;
+  tmp.getContext('2d').drawImage(el.drawC, 0, 0);
+  el.drawC.width = w; el.drawC.height = h;
+  drawCtx.drawImage(tmp, 0, 0, w, h);
+  el.lmC.width = w; el.lmC.height = h;
+}
+window.addEventListener('resize', resizeCanvases);
+el.drawC.width  = window.innerWidth;
+el.drawC.height = window.innerHeight;
+el.lmC.width    = window.innerWidth;
+el.lmC.height   = window.innerHeight;
+
+/* ============================================================
+   HISTORY
+   ============================================================ */
+function saveHist() {
+  if (S.histIdx < S.history.length - 1)
+    S.history = S.history.slice(0, S.histIdx + 1);
+  S.history.push(drawCtx.getImageData(0, 0, el.drawC.width, el.drawC.height));
+  if (S.history.length > MAX_HIST) S.history.shift();
+  S.histIdx = S.history.length - 1;
+}
+
+function undo() {
+  if (S.histIdx < 0) return;
+  if (S.histIdx === 0) {
+    drawCtx.clearRect(0, 0, el.drawC.width, el.drawC.height);
+    S.histIdx = -1;
+    toast('↩ Undo'); return;
+  }
+  S.histIdx--;
+  drawCtx.putImageData(S.history[S.histIdx], 0, 0);
+  toast('↩ Undo');
+}
+
+/* ============================================================
+   DRAW HELPERS
+   ============================================================ */
+function hexToRgba(hex, a) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function drawStroke(x1, y1, x2, y2) {
+  if (S.isErasing) {
+    drawCtx.globalCompositeOperation = 'destination-out';
+    drawCtx.strokeStyle = 'rgba(0,0,0,1)';
+    drawCtx.lineWidth   = S.brushSize * 3;
+  } else {
+    drawCtx.globalCompositeOperation = 'source-over';
+    drawCtx.strokeStyle = hexToRgba(S.color, 0.92);
+    drawCtx.lineWidth   = S.brushSize;
+  }
+  drawCtx.lineCap  = 'round';
+  drawCtx.lineJoin = 'round';
+  drawCtx.beginPath();
+  drawCtx.moveTo(x1, y1);
+  drawCtx.lineTo(x2, y2);
+  drawCtx.stroke();
+}
+
+function drawDot(x, y) {
+  if (S.isErasing) {
+    drawCtx.globalCompositeOperation = 'destination-out';
+    drawCtx.fillStyle = 'rgba(0,0,0,1)';
+  } else {
+    drawCtx.globalCompositeOperation = 'source-over';
+    drawCtx.fillStyle = hexToRgba(S.color, 0.92);
+  }
+  drawCtx.beginPath();
+  drawCtx.arc(x, y, S.brushSize / 2, 0, Math.PI * 2);
+  drawCtx.fill();
+}
+
+/* ============================================================
+   GESTURE DETECTION
+   Landmarks:
+     0=wrist, 4=thumb tip, 8=index tip, 12=middle tip
+     16=ring tip, 20=pinky tip
+     6=index pip, 10=middle pip, 14=ring pip, 18=pinky pip
+     2=thumb MCP, 17=pinky MCP
+
+   Gestures:
+     DRAW         - only index finger up
+     LIFT         - index + middle up (pen lifted)
+     ERASE        - all 4 fingers closed (fist)
+     COLOR_SWITCH - pinky + thumb up, rest down (🤙)
+   ============================================================ */
+function fingerUp(lm, tip, pip) {
+  return lm[tip].y < lm[pip].y;
+}
+
+function thumbUp(lm) {
+  // Thumb tip should be clearly to the side of the thumb base (MCP)
+  // We compare x distance since thumb moves laterally
+  const tip  = lm[4];
+  const mcp  = lm[2];
+  // In mirrored display, we just check if tip is away from palm center
+  const palmCenter = lm[9]; // middle finger MCP
+  const dist = Math.abs(tip.x - palmCenter.x);
+  return dist > 0.1 && lm[4].y < lm[3].y; // tip above IP joint
+}
+
+function detectGesture(lm) {
+  const indexUp  = fingerUp(lm, 8,  6);
+  const middleUp = fingerUp(lm, 12, 10);
+  const ringUp   = fingerUp(lm, 16, 14);
+  const pinkyUp  = fingerUp(lm, 20, 18);
+  const tUp      = thumbUp(lm);
+
+  // FIST — all 4 fingers closed
+  if (!indexUp && !middleUp && !ringUp && !pinkyUp) return 'ERASE';
+
+  // COLOR SWITCH — 🤙 pinky up + thumb up, index/middle/ring closed
+  if (!indexUp && !middleUp && !ringUp && pinkyUp && tUp) return 'COLOR_SWITCH';
+
+  // DRAW — only index up
+  if (indexUp && !middleUp && !ringUp && !pinkyUp) return 'DRAW';
+
+  // LIFT — index + middle (peace sign), or any ambiguous multi-finger
+  return 'LIFT';
+}
+
+/* ============================================================
+   COLOR SWITCH LOGIC
+   ============================================================ */
+function nextColor() {
+  S.colorIdx = (S.colorIdx + 1) % PALETTE.length;
+  S.isErasing = false;
+  updatePaletteUI();
+  updateCursorDot();
+
+  // Flash border
+  el.colorFlash.classList.add('flash');
+  setTimeout(() => el.colorFlash.classList.remove('flash'), 200);
+
+  const colorNames = ['White','Red','Orange','Yellow','Green','Cyan','Blue','Purple','Pink','Black'];
+  toast(`🎨 ${colorNames[S.colorIdx]}`);
+}
+
+/* ============================================================
+   CURSOR DOT UPDATE
+   ============================================================ */
+function updateCursorDot() {
+  const s = S.brushSize;
+  if (S.isErasing) {
+    el.cursorDot.style.width  = (s * 3) + 'px';
+    el.cursorDot.style.height = (s * 3) + 'px';
+    el.cursorDot.className = 'erasing';
+  } else {
+    el.cursorDot.style.width  = s + 'px';
+    el.cursorDot.style.height = s + 'px';
+    el.cursorDot.style.background = S.color;
+    el.cursorDot.style.boxShadow  = `0 0 12px 4px ${S.color}88`;
+    el.cursorDot.className = '';
+  }
+}
+
+/* ============================================================
+   PALETTE UI
+   ============================================================ */
+function buildPalette() {
+  // Remove old swatches (keep label)
+  el.colorRow.querySelectorAll('.cswatch').forEach(x => x.remove());
+
+  PALETTE.forEach((hex, idx) => {
+    const d = document.createElement('div');
+    d.className = 'cswatch' + (idx === S.colorIdx ? ' active' : '');
+    d.style.background = hex;
+    if (hex === '#000000') d.style.border = '2px solid rgba(255,255,255,0.2)';
+    d.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      S.colorIdx  = idx;
+      S.isErasing = false;
+      el.btnPen.classList.add('active');
+      el.btnEraser.classList.remove('active','erase-active');
+      updatePaletteUI();
+      updateCursorDot();
+    });
+    el.colorRow.appendChild(d);
+  });
+}
+
+function updatePaletteUI() {
+  el.btnPen.classList.add('active');
+  el.btnEraser.classList.remove('active','erase-active');
+  document.querySelectorAll('.cswatch').forEach((x, i) => {
+    x.classList.toggle('active', i === S.colorIdx);
+  });
+  // Show color index hint
+  el.colorIdx.textContent = `${S.colorIdx + 1}/${PALETTE.length}`;
+}
+
+/* ============================================================
+   HAND RESULTS
+   ============================================================ */
+let hands = null;
+
+function onResults(results) {
+  lmCtx.clearRect(0, 0, el.lmC.width, el.lmC.height);
+
+  // Decrement cooldown
+  if (S.colorSwitchCooldown > 0) S.colorSwitchCooldown--;
+
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    if (S.isDrawing) { saveHist(); S.isDrawing = false; }
+    S.lastX = null; S.lastY = null;
+    el.gBadge.className = '';
+    el.cursorDot.style.display = 'none';
+    S.prevGesture = '';
+    return;
+  }
+
+  const lm = results.multiHandLandmarks[0];
+  const gesture = detectGesture(lm);
+
+  // Index fingertip (landmark 8), mirrored for display
+  const rawX    = lm[8].x;
+  const screenX = (1 - rawX) * el.lmC.width;
+  const screenY = lm[8].y * el.lmC.height;
+
+  // Move cursor dot
+  el.cursorDot.style.display = 'block';
+  el.cursorDot.style.left    = screenX + 'px';
+  el.cursorDot.style.top     = screenY + 'px';
+
+  // Draw fingertip indicator on landmark canvas
+  lmCtx.save();
+  const tipColor = gesture === 'DRAW'         ? '#00ffcc'
+                 : gesture === 'ERASE'        ? '#ff4466'
+                 : gesture === 'COLOR_SWITCH' ? '#cc44ff'
+                 : '#ffaa00';
+
+  lmCtx.beginPath();
+  lmCtx.arc(screenX, screenY, 10, 0, Math.PI * 2);
+  lmCtx.strokeStyle = tipColor;
+  lmCtx.lineWidth = 3;
+  lmCtx.stroke();
+  lmCtx.fillStyle = tipColor + '33';
+  lmCtx.fill();
+
+  const wristX = (1 - lm[0].x) * el.lmC.width;
+  const wristY = lm[0].y * el.lmC.height;
+  lmCtx.beginPath();
+  lmCtx.moveTo(wristX, wristY);
+  lmCtx.lineTo(screenX, screenY);
+  lmCtx.strokeStyle = tipColor + '55';
+  lmCtx.lineWidth = 1.5;
+  lmCtx.stroke();
+  lmCtx.restore();
+
+  /* ── GESTURE: ERASE ── */
+  if (gesture === 'ERASE') {
+    if (!S.isErasing) {
+      S.isErasing = true;
+      el.btnEraser.classList.add('active','erase-active');
+      el.btnPen.classList.remove('active');
+      updateCursorDot();
+    }
+    el.gBadge.textContent = '✊  ERASING';
+    el.gBadge.className   = 'erasing';
+
+    // Erase stroke
+    if (S.lastX !== null && S.lastY !== null) {
+      if (!S.isDrawing) { saveHist(); S.isDrawing = true; }
+      drawStroke(S.lastX, S.lastY, screenX, screenY);
+    } else {
+      drawDot(screenX, screenY);
+      S.isDrawing = true;
+    }
+    S.lastX = screenX;
+    S.lastY = screenY;
+
+  /* ── GESTURE: COLOR SWITCH (🤙) ── */
+  } else if (gesture === 'COLOR_SWITCH') {
+    // Restore pen if we were in eraser mode
+    if (S.isErasing) {
+      S.isErasing = false;
+      el.btnPen.classList.add('active');
+      el.btnEraser.classList.remove('active','erase-active');
+    }
+
+    el.gBadge.textContent = '🤙  NEXT COLOR';
+    el.gBadge.className   = 'color-switch';
+
+    // Switch color only on fresh gesture entry (with cooldown)
+    if (S.prevGesture !== 'COLOR_SWITCH' && S.colorSwitchCooldown === 0) {
+      nextColor();
+      S.colorSwitchCooldown = S.COOLDOWN_FRAMES;
+    }
+
+    // Update cursor to purple while in color-switch mode
+    el.cursorDot.classList.add('color-switching');
+
+    // Stop drawing
+    if (S.isDrawing) { saveHist(); S.isDrawing = false; }
+    S.lastX = null; S.lastY = null;
+
+  /* ── GESTURE: DRAW ── */
+  } else if (gesture === 'DRAW') {
+    // Restore pen if we were erasing
+    if (S.isErasing) {
+      S.isErasing = false;
+      el.btnPen.classList.add('active');
+      el.btnEraser.classList.remove('active','erase-active');
+      updateCursorDot();
+    }
+    el.cursorDot.classList.remove('color-switching');
+
+    el.gBadge.textContent = '✏️  DRAWING';
+    el.gBadge.className   = 'drawing';
+
+    if (S.lastX !== null && S.lastY !== null) {
+      if (!S.isDrawing) { saveHist(); S.isDrawing = true; }
+      drawStroke(S.lastX, S.lastY, screenX, screenY);
+    } else {
+      drawDot(screenX, screenY);
+      S.isDrawing = true;
+    }
+    S.lastX = screenX;
+    S.lastY = screenY;
+
+  /* ── GESTURE: LIFT (default) ── */
+  } else {
+    // Restore pen if we were erasing
+    if (S.isErasing) {
+      S.isErasing = false;
+      el.btnPen.classList.add('active');
+      el.btnEraser.classList.remove('active','erase-active');
+      updateCursorDot();
+    }
+    el.cursorDot.classList.remove('color-switching');
+
+    el.gBadge.textContent = '✌️  PEN LIFTED';
+    el.gBadge.className   = 'lifted';
+
+    if (S.isDrawing) { saveHist(); S.isDrawing = false; }
+    S.lastX = null;
+    S.lastY = null;
+  }
+
+  S.prevGesture = gesture;
+}
+
+/* ============================================================
+   MEDIAPIPE INIT
+   ============================================================ */
+async function initMediaPipe() {
+  hands = new Hands({
+    locateFile: file =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
+
+  hands.setOptions({
+    maxNumHands:          1,
+    modelComplexity:      1,
+    minDetectionConfidence: 0.72,
+    minTrackingConfidence:  0.65,
+  });
+
+  hands.onResults(onResults);
+
+  const camera = new Camera(el.video, {
+    onFrame: async () => { await hands.send({ image: el.video }); },
+    width: 640, height: 480, facingMode: 'user',
+  });
+
+  el.loadMsg.textContent = 'Starting camera…';
+  await camera.start();
+
+  el.video.classList.add('on');
+  S.camReady = true;
+  el.loading.classList.remove('on');
+  el.statusPill.className = 'live';
+  el.statusTxt.textContent = 'LIVE · HAND TRACK';
+  toast('✋ Show your hand to start!');
+}
+
+/* ============================================================
+   TOOLBAR BUTTONS
+   ============================================================ */
+function initButtons() {
+  el.startBtn.addEventListener('pointerdown', async e => {
+    e.preventDefault();
+    el.splash.classList.add('gone');
+    el.loading.classList.add('on');
+    el.loadMsg.textContent = 'Loading AI hand model…';
+    try {
+      await initMediaPipe();
+    } catch(err) {
+      console.error(err);
+      el.loading.classList.remove('on');
+      el.statusPill.className = 'err';
+      el.statusTxt.textContent = 'ERROR';
+      toast('⚠️ Camera or hand model failed. Try Chrome.');
+    }
+  });
+
+  el.btnPen.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    S.isErasing = false;
+    el.btnPen.classList.add('active');
+    el.btnEraser.classList.remove('active','erase-active');
+    updateCursorDot();
+    toast('✏️ Pen');
+  });
+
+  el.btnEraser.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    S.isErasing = true;
+    el.btnEraser.classList.add('active','erase-active');
+    el.btnPen.classList.remove('active');
+    updateCursorDot();
+    toast('⌫ Eraser');
+  });
+
+  el.btnUndo.addEventListener('pointerdown', e => { e.preventDefault(); undo(); });
+
+  el.btnClear.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    saveHist();
+    drawCtx.clearRect(0, 0, el.drawC.width, el.drawC.height);
+    toast('🗑 Cleared');
+  });
+
+  el.btnSave.addEventListener('pointerdown', async e => {
+    e.preventDefault();
+    try {
+      const comp = document.createElement('canvas');
+      comp.width  = el.drawC.width;
+      comp.height = el.drawC.height;
+      const cc = comp.getContext('2d');
+      cc.save();
+      cc.scale(-1,1); cc.translate(-comp.width, 0);
+      cc.drawImage(el.video, 0, 0, comp.width, comp.height);
+      cc.restore();
+      cc.drawImage(el.drawC, 0, 0);
+      const a = document.createElement('a');
+      a.href = comp.toDataURL('image/jpeg', 0.92);
+      a.download = `air-draw-${Date.now()}.jpg`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      toast('💾 Saved!');
+    } catch(err) { toast('⚠️ Save failed'); }
+  });
+
+  el.sizeRange.addEventListener('input', () => {
+    S.brushSize = +el.sizeRange.value;
+    updateCursorDot();
+  });
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+function toast(msg, dur = 2200) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  el.toasts.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('out');
+    setTimeout(() => t.remove(), 300);
+  }, dur);
+}
+
+/* ============================================================
+   PREVENT SYSTEM SCROLL
+   ============================================================ */
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+buildPalette();
+updatePaletteUI();
+initButtons();
+updateCursorDot();
+</script>
+</body>
+</html>
